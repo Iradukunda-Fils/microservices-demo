@@ -1,0 +1,29 @@
+# ============================================================================
+# Development Dockerfile for React Application
+# Educational Note: This uses Vite's development server with HMR
+# Hot Module Replacement (HMR) allows instant updates without full page reload
+# ============================================================================
+
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy application code
+COPY . .
+
+# Expose port
+EXPOSE 3000
+
+# Start development server
+# Educational Note: Vite dev server provides:
+# - Hot Module Replacement (HMR)
+# - Fast refresh
+# - Instant server start
+# - Optimized dependency pre-bundling
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

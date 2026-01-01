@@ -1,0 +1,57 @@
+/*
+ * Protocol Buffer definition for ProductService gRPC API
+ * 
+ * Educational Note: This defines the contract between ProductService and OrderService.
+ * OrderService calls these methods to validate products and check inventory
+ * before creating orders.
+ */
+
+syntax = "proto3";
+
+package product;
+
+// ProductService provides product validation and inventory checks
+service ProductService {
+    // Get product information including price and availability
+    rpc GetProductInfo (ProductInfoRequest) returns (ProductInfoResponse);
+    
+    // Check if sufficient inventory exists for a quantity
+    rpc CheckAvailability (AvailabilityRequest) returns (AvailabilityResponse);
+}
+
+// Request message for product information
+message ProductInfoRequest {
+    int32 product_id = 1;  // Product ID to query
+    string requesting_service = 2;  // Name of service making the request
+}
+
+// Response message for product information
+message ProductInfoResponse {
+    bool exists = 1;  // Whether the product exists
+    ProductInfo product_info = 2;  // Product details (only if exists)
+    string error_message = 3;  // Error message (only if not exists)
+}
+
+// Product information
+message ProductInfo {
+    int32 id = 1;
+    string name = 2;
+    string description = 3;
+    string price = 4;  // Decimal as string to avoid precision issues
+    int32 inventory_count = 5;
+    bool is_available = 6;
+}
+
+// Request message for availability check
+message AvailabilityRequest {
+    int32 product_id = 1;  // Product ID to check
+    int32 quantity = 2;  // Requested quantity
+    string requesting_service = 3;  // Name of service making the request
+}
+
+// Response message for availability check
+message AvailabilityResponse {
+    bool available = 1;  // Whether sufficient inventory exists
+    int32 available_quantity = 2;  // Current inventory count
+    string error_message = 3;  // Error message (only if not available)
+}

@@ -1,0 +1,30 @@
+/*
+ * Protocol Buffer definition for UserService gRPC API
+ * (Copy from UserService for client code generation)
+ */
+
+syntax = "proto3";
+
+package user;
+
+service UserService {
+    rpc ValidateUser (ValidateUserRequest) returns (ValidateUserResponse);
+}
+
+message ValidateUserRequest {
+    int32 user_id = 1;
+    string requesting_service = 2;
+}
+
+message ValidateUserResponse {
+    bool valid = 1;
+    UserInfo user_info = 2;
+    string error_message = 3;
+}
+
+message UserInfo {
+    int32 id = 1;
+    string username = 2;
+    string email = 3;
+    bool is_active = 4;
+}

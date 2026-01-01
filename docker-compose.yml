@@ -1,0 +1,257 @@
+# ============================================================================
+# Development Docker Compose Configuration
+# Educational Note: This configuration is optimized for development with:
+# - Volume mounts for hot-reloading
+# - Debug mode enabled
+# - Simplified configuration
+# - Development-friendly defaults
+# ============================================================================
+
+services:
+  # ============================================================================
+  # Redis - In-memory cache and session store
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    expose:
+      - "6379"
+    ports:
+      - "6379:6379"  # Exposed for debugging
+    volumes:
+      - redis-data:/data
+    networks:
+      - microservices-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    command: redis-server --appendonly yes
+
+  # ============================================================================
+  # API Gateway - Nginx reverse proxy (Single entry point)
+  # ============================================================================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "80:80"
+    volumes:
+      - user-service-static:/var/www/static/user:ro
+      - product-service-static:/var/www/static/product:ro
+      - order-service-static:/var/www/static/order:ro
+    networks:
+      - microservices-network
+    depends_on:
+      user-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ============================================================================
+  # UserService - Authentication, user management, and 2FA
+  # ============================================================================
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    expose:
+      - "8000"
+    ports:
+      - "50051:50051"  # gRPC port exposed for debugging
+    environment:
+      - DJANGO_SETTINGS_MODULE=user_service.settings
+      - DEBUG=True
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - ALLOWED_HOSTS=*
+      - DATABASE_URL=sqlite:///data/db.sqlite3
+      - JWT_PRIVATE_KEY_PATH=/app/keys/jwt_private.pem
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - FIELD_ENCRYPTION_KEY=FbQESSz7XLVGBbNqZjqCSdB4I69wfWJMexLJWitW_y4=
+      - GRPC_PORT=50051
+      - SERVICE_SECRET=dev-service-secret-change-in-production
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./user-service:/app
+      - user-service-db:/app/data
+      - jwt-keys:/app/keys
+      - user-service-static:/app/staticfiles
+    networks:
+      - microservices-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: bash start_services.sh
+
+  # ============================================================================
+  # ProductService - Product catalog and inventory management
+  # ============================================================================
+  product-service:
+    build:
+      context: ./product-service
+      dockerfile: Dockerfile
+    container_name: product-service
+    expose:
+      - "8000"
+    ports:
+      - "50052:50052"  # gRPC port exposed for debugging
+    environment:
+      - DJANGO_SETTINGS_MODULE=product_service.settings
+      - DEBUG=True
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - ALLOWED_HOSTS=*
+      - DATABASE_URL=sqlite:///data/db.sqlite3
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - USER_SERVICE_URL=http://user-service:8000
+      - GRPC_PORT=50052
+      - SERVICE_SECRET=dev-service-secret-change-in-production
+      - REDIS_URL=redis://redis:6379/2
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./product-service:/app
+      - product-service-db:/app/data
+      - jwt-keys:/app/keys:ro
+      - product-service-static:/app/staticfiles
+    networks:
+      - microservices-network
+    depends_on:
+      user-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: bash start_services.sh
+
+  # ============================================================================
+  # OrderService - Order orchestration and coordination
+  # ============================================================================
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: order-service
+    expose:
+      - "8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=order_service.settings
+      - DEBUG=True
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - ALLOWED_HOSTS=*
+      - DATABASE_URL=sqlite:///data/db.sqlite3
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - FIELD_ENCRYPTION_KEY=FbQESSz7XLVGBbNqZjqCSdB4I69wfWJMexLJWitW_y4=
+      - USER_SERVICE_GRPC_URL=user-service:50051
+      - PRODUCT_SERVICE_GRPC_URL=product-service:50052
+      - SERVICE_SECRET=dev-service-secret-change-in-production
+      - RETRY_ATTEMPTS=3
+      - RETRY_MIN_WAIT=1
+      - RETRY_MAX_WAIT=10
+      - CIRCUIT_BREAKER_FAIL_MAX=5
+      - CIRCUIT_BREAKER_TIMEOUT=30
+      - REDIS_URL=redis://redis:6379/1
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./order-service:/app
+      - order-service-db:/app/data
+      - jwt-keys:/app/keys:ro
+      - order-service-static:/app/staticfiles
+    networks:
+      - microservices-network
+    depends_on:
+      user-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: bash start_services.sh
+
+  # ============================================================================
+  # Frontend - React application with Vite (Development mode with HMR)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: frontend
+    expose:
+      - "3000"
+    environment:
+      - VITE_API_BASE_URL=http://localhost
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Prevent overwriting node_modules
+    networks:
+      - microservices-network
+    depends_on:
+      - user-service
+      - product-service
+      - order-service
+    restart: unless-stopped
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  microservices-network:
+    driver: bridge
+    name: microservices-network
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  user-service-db:
+    name: user-service-db
+  product-service-db:
+    name: product-service-db
+  order-service-db:
+    name: order-service-db
+  jwt-keys:
+    name: jwt-keys
+  user-service-static:
+    name: user-service-static
+  product-service-static:
+    name: product-service-static
+  order-service-static:
+    name: order-service-static
+  redis-data:
+    name: redis-data

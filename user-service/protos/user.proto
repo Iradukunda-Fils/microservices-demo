@@ -1,0 +1,53 @@
+/*
+ * Protocol Buffer definition for UserService gRPC API
+ * 
+ * Educational Note: Protocol Buffers (protobuf) are Google's language-neutral,
+ * platform-neutral, extensible mechanism for serializing structured data.
+ * 
+ * Benefits over JSON:
+ * - 3-10x smaller message size (binary vs text)
+ * - 20-100x faster parsing
+ * - Type safety (strongly typed)
+ * - Automatic code generation
+ * - Backward/forward compatibility
+ * 
+ * Used by: Google, Netflix, Square, Uber, Dropbox
+ */
+
+syntax = "proto3";
+
+package user;
+
+// UserService provides user validation for other services
+// Educational Note: This is used by OrderService to verify users exist
+// before creating orders, without direct database access
+service UserService {
+    // Validate if a user exists and return basic info
+    // Educational Note: This is called via gRPC (not REST) because:
+    // 1. Faster (binary protocol vs JSON)
+    // 2. Type-safe (compile-time checking)
+    // 3. Better for internal service-to-service calls
+    rpc ValidateUser (ValidateUserRequest) returns (ValidateUserResponse);
+}
+
+// Request message for user validation
+message ValidateUserRequest {
+    int32 user_id = 1;  // User ID to validate
+    string requesting_service = 2;  // Name of service making the request (for logging)
+}
+
+// Response message for user validation
+message ValidateUserResponse {
+    bool valid = 1;  // Whether the user exists and is active
+    UserInfo user_info = 2;  // User information (only if valid)
+    string error_message = 3;  // Error message (only if not valid)
+}
+
+// User information (subset of full user data)
+// Educational Note: We only return necessary fields to minimize data transfer
+message UserInfo {
+    int32 id = 1;
+    string username = 2;
+    string email = 3;  // In production, consider encrypting this
+    bool is_active = 4;
+}

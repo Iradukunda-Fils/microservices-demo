@@ -1,0 +1,27 @@
+.footer {
+  background-color: var(--surface-color);
+  border-top: 1px solid var(--border-color);
+  margin-top: auto;
+}
+
+.footer-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.footer-content p {
+  margin-bottom: var(--spacing-sm);
+}
+
+.footer-tech {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.footer-note {
+  font-size: 0.75rem;
+  font-style: italic;
+}

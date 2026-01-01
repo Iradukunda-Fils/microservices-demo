@@ -1,0 +1,40 @@
+# Core Framework
+Django==4.2.7
+djangorestframework==3.14.0
+
+# Authentication & Security
+djangorestframework-simplejwt==5.3.0
+django-two-factor-auth==1.15.5
+qrcode==7.4.2
+django-encrypted-model-fields==0.6.5
+cryptography==41.0.7
+django-cors-headers==4.3.1
+
+# API Documentation
+drf-spectacular==0.27.0
+
+# gRPC
+grpcio==1.59.3
+grpcio-tools==1.59.3
+
+# Resilience (for future use)
+tenacity==8.2.3
+pybreaker==1.0.2
+
+# Validation
+django-phonenumber-field==7.2.0
+phonenumbers==8.13.26
+
+# Testing
+pytest==7.4.3
+pytest-django==4.7.0
+hypothesis==6.92.1
+factory-boy==3.3.0
+pytest-cov==4.1.0
+
+# Utilities
+python-dotenv==1.0.0
+
+# Redis Cache
+redis==5.0.1
+django-redis==5.4.0

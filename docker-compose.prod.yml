@@ -1,0 +1,343 @@
+# ============================================================================
+# Production Docker Compose Configuration
+# Educational Note: This configuration is optimized for production with:
+# - No volume mounts (immutable containers)
+# - Production environment variables
+# - Security hardening
+# - Resource limits
+# - Health checks
+# - Restart policies
+# ============================================================================
+
+services:
+  # ============================================================================
+  # API Gateway - Nginx reverse proxy with SSL/TLS
+  # ============================================================================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "80:80"
+      - "443:443"  # HTTPS port
+    volumes:
+      - user-service-static:/var/www/static/user:ro
+      - product-service-static:/var/www/static/product:ro
+      - order-service-static:/var/www/static/order:ro
+      - ./certs:/etc/nginx/certs:ro  # SSL certificates
+    networks:
+      - public-network
+      - private-network
+    depends_on:
+      user-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # ============================================================================
+  # UserService - Authentication, user management, and 2FA
+  # ============================================================================
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    expose:
+      - "8000"
+      - "50051"  # gRPC port (internal only)
+    environment:
+      - DJANGO_SETTINGS_MODULE=user_service.settings
+      - DEBUG=False
+      - SECRET_KEY=${USER_SERVICE_SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/userservice
+      - JWT_PRIVATE_KEY_PATH=/app/keys/jwt_private.pem
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
+      - GRPC_PORT=50051
+      - GRPC_SSL_ENABLED=true
+      - GRPC_CERT_PATH=/app/certs/user-service-cert.pem
+      - GRPC_KEY_PATH=/app/certs/user-service-key.pem
+      - GRPC_CA_PATH=/app/certs/ca-cert.pem
+      - SERVICE_SECRET=${SERVICE_SECRET}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - LOG_LEVEL=INFO
+    volumes:
+      - jwt-keys:/app/keys:ro
+      - user-service-static:/app/staticfiles
+      - ./certs:/app/certs:ro  # mTLS certificates
+    networks:
+      - private-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: bash start_services.sh
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+
+  # ============================================================================
+  # ProductService - Product catalog and inventory management
+  # ============================================================================
+  product-service:
+    build:
+      context: ./product-service
+      dockerfile: Dockerfile
+    container_name: product-service
+    expose:
+      - "8000"
+      - "50052"  # gRPC port (internal only)
+    environment:
+      - DJANGO_SETTINGS_MODULE=product_service.settings
+      - DEBUG=False
+      - SECRET_KEY=${PRODUCT_SERVICE_SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/productservice
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - USER_SERVICE_URL=http://user-service:8000
+      - GRPC_PORT=50052
+      - GRPC_SSL_ENABLED=true
+      - GRPC_CERT_PATH=/app/certs/product-service-cert.pem
+      - GRPC_KEY_PATH=/app/certs/product-service-key.pem
+      - GRPC_CA_PATH=/app/certs/ca-cert.pem
+      - SERVICE_SECRET=${SERVICE_SECRET}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/2
+      - LOG_LEVEL=INFO
+    volumes:
+      - jwt-keys:/app/keys:ro
+      - product-service-static:/app/staticfiles
+      - ./certs:/app/certs:ro  # mTLS certificates
+    networks:
+      - private-network
+    depends_on:
+      user-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: bash start_services.sh
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+
+  # ============================================================================
+  # OrderService - Order orchestration and coordination
+  # ============================================================================
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: order-service
+    expose:
+      - "8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=order_service.settings
+      - DEBUG=False
+      - SECRET_KEY=${ORDER_SERVICE_SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/orderservice
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
+      - USER_SERVICE_GRPC_URL=user-service:50051
+      - PRODUCT_SERVICE_GRPC_URL=product-service:50052
+      - GRPC_SSL_ENABLED=true
+      - GRPC_CERT_PATH=/app/certs/order-service-cert.pem
+      - GRPC_KEY_PATH=/app/certs/order-service-key.pem
+      - GRPC_CA_PATH=/app/certs/ca-cert.pem
+      - SERVICE_SECRET=${SERVICE_SECRET}
+      - RETRY_ATTEMPTS=3
+      - RETRY_MIN_WAIT=1
+      - RETRY_MAX_WAIT=10
+      - CIRCUIT_BREAKER_FAIL_MAX=5
+      - CIRCUIT_BREAKER_TIMEOUT=30
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - LOG_LEVEL=INFO
+    volumes:
+      - jwt-keys:/app/keys:ro
+      - order-service-static:/app/staticfiles
+      - ./certs:/app/certs:ro  # mTLS certificates
+    networks:
+      - private-network
+    depends_on:
+      user-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: bash start_services.sh
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+
+  # ============================================================================
+  # Frontend - React application (Production build)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    expose:
+      - "3000"
+    environment:
+      - VITE_API_BASE_URL=https://${DOMAIN_NAME}
+    networks:
+      - private-network
+    depends_on:
+      - user-service
+      - product-service
+      - order-service
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # ============================================================================
+  # PostgreSQL Database (Production)
+  # ============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_MULTIPLE_DATABASES=userservice,productservice,orderservice
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
+    networks:
+      - private-network
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+  # ============================================================================
+  # Redis Cache (Production)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    networks:
+      - private-network
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  # Public network - API Gateway only
+  public-network:
+    driver: bridge
+    name: public-network
+  
+  # Private network - Services only (no external access)
+  private-network:
+    driver: bridge
+    name: private-network
+    internal: true  # No external access
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  postgres-data:
+    name: postgres-data
+  redis-data:
+    name: redis-data
+  jwt-keys:
+    name: jwt-keys
+  user-service-static:
+    name: user-service-static
+  product-service-static:
+    name: product-service-static
+  order-service-static:
+    name: order-service-static
+
