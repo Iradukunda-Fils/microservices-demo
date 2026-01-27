@@ -112,11 +112,11 @@ git commit -m "feat: add new feature"
 
 # With detailed message
 git commit -m "feat: add product reviews
-
+```
 - Add Review model
 - Add review API endpoints
 - Update frontend to display reviews"
-```
+
 
 ### Push Changes
 ```bash
